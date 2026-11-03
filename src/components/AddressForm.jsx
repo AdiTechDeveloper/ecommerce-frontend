@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { getPincode } from '../pincode.js';
 
 // The map (leaflet) is downloaded only when the customer starts adding / changing the pin
-const MapPicker = lazy(() => import('./MapPicker.jsx'));
+const MapPicker = lazy(() => import('./Mappicker.jsx'));
 
 const LABELS = [
   { key: 'home', text: 'Home', icon: '🏠' },
