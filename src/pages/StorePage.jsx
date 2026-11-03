@@ -216,6 +216,7 @@ function StorePage({ slug }) {
             <RailItem
               key={c.id}
               label={c.name}
+              image={c.image}
               active={String(c.id) === String(categoryId)}
               onClick={() => setCategoryId(c.id)}
             />
@@ -317,7 +318,10 @@ function StorePage({ slug }) {
   );
 }
 
-function RailItem({ label, active, onClick, all }) {
+function RailItem({ label, image, active, onClick, all }) {
+  // Photo na ho ya khule hi na (broken link) to pehle jaisa pehla akshar dikhao
+  const [broken, setBroken] = useState(false);
+
   return (
     <button
       onClick={onClick}
@@ -326,7 +330,7 @@ function RailItem({ label, active, onClick, all }) {
       }`}
     >
       <span
-        className={`grid size-12 place-items-center rounded-xl text-lg font-extrabold text-ink/50 md:size-14 ${
+        className={`grid size-12 place-items-center overflow-hidden rounded-xl text-lg font-extrabold text-ink/50 md:size-14 ${
           active ? 'ring-2 ring-brand' : ''
         }`}
         style={{ background: all ? '#eef2f0' : tintFor(label) }}
@@ -338,6 +342,15 @@ function RailItem({ label, active, onClick, all }) {
             <rect x="4" y="13" width="7" height="7" rx="1.5" />
             <rect x="13" y="13" width="7" height="7" rx="1.5" />
           </svg>
+        ) : image && !broken ? (
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setBroken(true)}
+            className="size-full object-cover"
+          />
         ) : (
           label.charAt(0)
         )}

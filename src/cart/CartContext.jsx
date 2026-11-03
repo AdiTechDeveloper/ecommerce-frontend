@@ -33,13 +33,21 @@ const pickStore = (s) => ({
   min_order_amount: Number(s.min_order_amount) || 0,
 });
 
+
+// Ek order mein kitna le sakte hain: stock aur per-order limit mein se jo kam ho
+export const maxFor = (p) => {
+  const stock = Number(p.online_qty) || 0;
+  const lim = p.max_per_order != null ? Number(p.max_per_order) : Infinity;
+  return Math.min(stock, lim);
+};
+
 const pickItem = (p, qty, addedAt = Date.now()) => ({
   id: p.id,
   name: p.name,
   price: Number(p.price) || 0,
   mrp: p.mrp != null ? Number(p.mrp) : null,
   price_unit: p.price_unit || 'piece',
-  max: Number(p.online_qty) || 0,
+  max: maxFor(p),
   image: p.image || null,
   qty,
   addedAt,
@@ -78,7 +86,7 @@ export function CartProvider({ children }) {
       const sameStore = c.store && c.store.slug === store.slug;
       const base = sameStore ? c : { store: pickStore(store), mode: defaultMode(store), items: {} };
       const existing = base.items[product.id];
-      const max = Number(product.online_qty) || 0;
+      const max = maxFor(product);
       const next = Math.min(round2((existing ? existing.qty : 0) + stepFor(product.price_unit)), max);
       if (next <= 0) return c;
 
@@ -91,7 +99,7 @@ export function CartProvider({ children }) {
 
   // Clears the cart and starts a new one with this product
   const replaceCart = useCallback((product, store) => {
-    const q = Math.min(stepFor(product.price_unit), Number(product.online_qty) || 0);
+    const q = Math.min(stepFor(product.price_unit), maxFor(product));
     if (q <= 0) {
       setCart(EMPTY);
       return;

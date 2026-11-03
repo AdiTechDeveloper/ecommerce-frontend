@@ -1,8 +1,23 @@
-
 import { getToken, notifyUnauthorized } from './auth/token.js';
 
 // All public API calls go through this file.
 const BASE = import.meta.env.VITE_API_BASE || '/api/public';
+
+// Backend image paths ("/storage/products/1/abc.jpg") ko poora URL banao.
+// Dev mein BASE relative hai, to isi origin se (Vite /storage ko Laravel par bhej deta hai).
+// Production mein API wale domain se (jaise https://api.vakro.in).
+const MEDIA_ORIGIN = (() => {
+  try {
+    return new URL(BASE, window.location.origin).origin;
+  } catch {
+    return '';
+  }
+})();
+
+export const mediaUrl = (path) => {
+  if (!path) return null;
+  return /^https?:\/\//i.test(path) ? path : `${MEDIA_ORIGIN}${path}`;
+};
 
 export class ApiError extends Error {
   constructor(message, status, data) {
@@ -97,10 +112,16 @@ export const getStore = (slug, pincode) =>
   get(`/stores/${slug}`, { pincode });
 
 export const getCategories = (slug) =>
-  get(`/stores/${slug}/categories`);
+  get(`/stores/${slug}/categories`).then((res) => ({
+    ...res,
+    data: (res.data || []).map((c) => ({ ...c, image: mediaUrl(c.image) })),
+  }));
 
 export const getProducts = (slug, params) =>
-  get(`/stores/${slug}/products`, params);
+  get(`/stores/${slug}/products`, params).then((res) => ({
+    ...res,
+    data: (res.data || []).map((p) => ({ ...p, image: mediaUrl(p.image) })),
+  }));
 
 // Location and pincode
 // GPS coordinates -> pincode, area, city, state

@@ -1,9 +1,8 @@
 import { money } from '../api.js';
-import { stepFor, useCart } from '../cart/CartContext.jsx';
+import { stepFor, useCart ,maxFor} from '../cart/CartContext.jsx';
 import { tintFor } from '../tint.js';
 import { ClockIcon } from './icons.jsx';
 import QtyStepper from './QtyStepper.jsx';
-
 // Blinkit-style card: image, small time pill, name, then price on the left and ADD / stepper on the right.
 // prep = store.prep_minutes (0 = pill hidden)
 export default function ProductCard({ product, onAdd, prep = 0 }) {
@@ -75,7 +74,7 @@ export default function ProductCard({ product, onAdd, prep = 0 }) {
               qty={line.qty}
               unit={p.price_unit}
               step={stepFor(p.price_unit)}
-              max={p.online_qty}
+             max={maxFor(p)}
               compact
               onChange={(q) => setQty(p.id, q)}
               className="w-full justify-between sm:h-9"
@@ -93,6 +92,9 @@ export default function ProductCard({ product, onAdd, prep = 0 }) {
       </div>
 
       {low && <p className="mt-1.5 text-[11px] font-bold text-tomato">Only {p.online_qty} left</p>}
+      {line && p.max_per_order != null && line.qty >= Number(p.max_per_order) && (
+  <p className="mt-1.5 text-[11px] font-bold text-slate-500">Max {p.max_per_order} per order</p>
+)}
     </article>
   );
 }
