@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+  --color-brand: #0c831f;
+  --color-brand-dark: #0a6a19;
+  --color-brand-soft: #e8f5ea;
+  --color-marigold: #f8cb46;
+  --color-tomato: #d6452f;
+  --color-ink: #1b2b22;
+}
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-white font-sans text-ink antialiased; }
+  :focus-visible { outline: 3px solid var(--color-marigold); outline-offset: 2px; }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@utility animate-sheet-up { animation: sheet-up 0.22s ease-out; }
+@utility animate-fade-in { animation: fade-in 0.2s ease-out; }
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@utility animate-drawer-in { animation: drawer-in 0.22s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-up, .animate-fade-in, .animate-drawer-in { animation: none; }
+}
