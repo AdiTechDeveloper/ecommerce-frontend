@@ -1,30 +1,27 @@
-name: Build and Deploy to Hostinger
-
+# .github/workflows/deploy.yml
+name: Build & Deploy
 on:
   push:
     branches: [main]
-     workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
       - run: npm ci
       - run: npm run build
         env:
-          VITE_API_URL: https://api.vakaro.in
-
+          VITE_API_URL: https://api.vakaro.in   # apne variable ka naam daalo
       - uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
           local-dir: ./dist/
-          server-dir: ./
+          server-dir: ./public_html/   # subdomain ka folder path
