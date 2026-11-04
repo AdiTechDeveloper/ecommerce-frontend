@@ -130,6 +130,13 @@ export const reverseGeocode = (lat, lng) =>
     lat: Number(lat).toFixed(5),
     lng: Number(lng).toFixed(5),
   });
+// Search a place by name, area, landmark or pincode -> list of { label, lat, lng, pincode }
+export const searchPlaces = (q, lat, lng) =>
+  get('/geo/search', {
+    q,
+    lat: lat != null ? Number(lat).toFixed(4) : undefined,
+    lng: lng != null ? Number(lng).toFixed(4) : undefined,
+  });
 
 // Typed pincode -> pincode, area, city, state
 // Backend may return 404 if the pincode is not found.

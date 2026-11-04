@@ -4,7 +4,6 @@ import {
   Route,
   Routes,
   useLocation,
-  useSearchParams,
 } from 'react-router-dom';
 
 import { money } from './api.js';
@@ -14,10 +13,10 @@ import { useOpenCart } from './cart/CartDrawer.jsx';
 import { CartIcon, ChevronDown, PinIcon } from './components/icons.jsx';
 import LocationPrompt from './components/LocationPrompt.jsx';
 import LocationSheet from './components/LocationSheet.jsx';
+import SearchBox from './components/SearchBox.jsx';
 import { openLocationSheet, useLocationState } from './location.js';
 import HomePage from './pages/HomePage.jsx';
 import { usePincode } from './pincode.js';
-
 
 // Lazy-loaded pages
 const StorePage = lazy(() => import('./pages/StorePage.jsx'));
@@ -27,25 +26,17 @@ const OrdersPage = lazy(() => import('./pages/OrdersPage.jsx'));
 
 function Logo() {
   return (
-    // <Link
-    //   to="/"
-    //   className="shrink-0 text-[34px] font-black leading-none tracking-tight md:text-[40px]"
-    // >
-    //   {/* <span className="text-ink">vak</span>
-    //   <span className="text-brand">aro</span> */}
-    // <img src="" alt="" />
-    // </Link>
- <Link
-  to="/"
-  aria-label="Vakaro home"
-  className="flex shrink-0 items-center"
->
-  <img
-    src="/Vakaro Special 1.png"
-    alt="Vakaro" 
-    className="h-16 w-auto max-w-[250px] object-contain sm:h-14 sm:max-w-[220px] md:h-16 md:max-w-[250px] lg:h-[72px] lg:max-w-[380px]"
-  />
-</Link>
+    <Link
+      to="/"
+      aria-label="Vakaro home"
+      className="flex shrink-0 items-center"
+    >
+      <img
+        src="/Vakaro Special 1.png"
+        alt="Vakaro"
+        className="h-16 w-auto max-w-[250px] object-contain sm:h-14 sm:max-w-[220px] md:h-16 md:max-w-[250px] lg:h-[72px] lg:max-w-[380px]"
+      />
+    </Link>
   );
 }
 
@@ -201,68 +192,6 @@ function AccountMenu() {
   );
 }
 
-// Search stores on home and products inside a store
-function SearchBox({
-  placeholder = 'Search store name, area or pincode',
-  label = 'Search stores',
-}) {
-  const [params, setParams] = useSearchParams();
-  const q = params.get('q') || '';
-
-  const setQ = (value) => {
-    setParams(value ? { q: value } : {}, { replace: true });
-  };
-
-  return (
-    <div className="flex h-12 w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-100 px-4 focus-within:border-brand focus-within:bg-white md:h-14 md:rounded-2xl">
-      <svg
-        viewBox="0 0 24 24"
-        className="size-6 shrink-0 text-slate-600"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        aria-hidden="true"
-      >
-        <circle cx="11" cy="11" r="7" />
-        <path d="M20 20l-3.5-3.5" />
-      </svg>
-
-      <input
-        type="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={placeholder}
-        aria-label={label}
-        autoComplete="off"
-        enterKeyHint="search"
-        className="h-full min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-slate-500 md:text-lg [&::-webkit-search-cancel-button]:hidden"
-      />
-
-      {q && (
-        <button
-          type="button"
-          onClick={() => setQ('')}
-          aria-label="Clear search"
-          className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-300 text-slate-700 active:bg-slate-400"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
-      )}
-    </div>
-  );
-}
-
 // Location selector: GPS or manually entered pincode
 function LocationButton({ variant }) {
   const pincode = usePincode();
@@ -356,9 +285,10 @@ function LocationButton({ variant }) {
   );
 }
 
+// Sticky nahi hai: sticky wrapper App ke andar hai (header + mobile search saath mein)
 function Header({ withSearch, searchProps }) {
   return (
-    <header className="border-b border-slate-200 bg-white md:sticky md:top-0 md:z-20 md:shadow-sm">
+    <header className="border-b border-slate-200 bg-white md:shadow-sm">
       <div className="mx-auto flex max-w-7xl items-center gap-x-4 px-4 py-2.5 md:gap-x-6 md:py-4">
         <Logo />
 
@@ -395,19 +325,41 @@ export default function App() {
       }
     : {};
 
+  // Sticky header ki height measure karke CSS variable mein daalo (StorePage use karta hai)
+  const headerRef = useRef(null);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return undefined;
+
+    const set = () =>
+      document.documentElement.style.setProperty(
+        '--app-header-h',
+        `${el.offsetHeight}px`
+      );
+
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <>
-      <Header
-        withSearch={withSearch}
-        searchProps={searchProps}
-      />
+      <div ref={headerRef} className="sticky top-0 z-30 bg-white">
+        <Header
+          withSearch={withSearch}
+          searchProps={searchProps}
+        />
 
-      {/* Mobile search bar */}
-      {withSearch && (
-        <div className="sticky top-0 z-20 border-b border-slate-100 bg-white px-4 py-2 md:hidden">
-          <SearchBox {...searchProps} />
-        </div>
-      )}
+        {/* Mobile search bar: sirf home pe. Store page pe ye StorePage ke search icon se khulta hai */}
+        {withSearch && !onStorePage && (
+          <div className="border-b border-slate-100 bg-white px-4 py-2 md:hidden">
+            <SearchBox {...searchProps} />
+          </div>
+        )}
+      </div>
 
       <main
         className={
@@ -427,7 +379,6 @@ export default function App() {
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/order/:orderNo" element={<OrderPage />} />
             <Route path="/s/:slug" element={<StorePage />} />
-          
 
             <Route
               path="*"

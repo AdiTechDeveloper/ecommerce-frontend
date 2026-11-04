@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { reverseGeocode } from '../api.js';
+import { reverseGeocode, searchPlaces } from '../api.js';
 
 // Pick a delivery spot on a map. The pin stays in the middle, the customer moves the map.
 // After the map stops, pincode / area / city come from the backend (/geo/reverse).
+// The top bar is also a search box: type an area, landmark or pincode, press Enter, pick a result,
+// and the map jumps there (then the normal reverse lookup fills the address).
 //
 // Two ways to use it:
 //  - Full screen (phones): <MapPicker start onClose onConfirm />  -> "Confirm location & proceed"
@@ -19,12 +21,32 @@ export default function MapPicker({ start, onConfirm, onClose, embedded = false,
   const boxRef = useRef(null);
   const mapRef = useRef(null);
   const reqRef = useRef(0);
+  const pickedRef = useRef(null); // result the customer chose from the search list (cleared when they drag the map)
   const onPlaceRef = useRef(onPlace);
   onPlaceRef.current = onPlace;
   const [status, setStatus] = useState('zoom'); // zoom | loading | ok | nopin | error
   const [place, setPlace] = useState(null);
   const [locating, setLocating] = useState(false);
   const [notice, setNotice] = useState('');
+
+  // Search box
+  const [editing, setEditing] = useState(false); // true while the customer is typing in the bar
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(null); // null = nothing searched yet, [] = no match
+  const [searching, setSearching] = useState(false);
+  const searchReq = useRef(0);
+  const searchOpenRef = useRef(false);
+  searchOpenRef.current = editing && results !== null;
+
+  const closeSearch = () => {
+    searchReq.current += 1; // ignore any answer still on its way
+    setSearching(false);
+    setResults(null);
+    setEditing(false);
+    setQuery('');
+  };
+  const closeSearchRef = useRef(closeSearch);
+  closeSearchRef.current = closeSearch;
 
   // Build the map (once)
   useEffect(() => {
@@ -60,21 +82,41 @@ export default function MapPicker({ start, onConfirm, onClose, embedded = false,
         try {
           const res = await reverseGeocode(c.lat, c.lng);
           if (id !== reqRef.current) return; // map moved on meanwhile
-          const d = res.data || {};
+          const raw = res.data || {};
+          // A place picked from search brings its own area / city / pincode / landmark.
+          // They win over the pin lookup (which can be empty or even a different pincode).
+          const pk = pickedRef.current;
+          const d = pk
+            ? {
+                ...raw,
+                ...Object.fromEntries(
+                  ['area', 'city', 'state', 'pincode', 'landmark', 'house'].filter((k) => pk[k]).map((k) => [k, pk[k]])
+                ),
+              }
+            : raw;
           const found = { ...d, lat: c.lat, lng: c.lng };
           setPlace(found);
           const ok = /^\d{6}$/.test(d.pincode || '');
           setStatus(ok ? 'ok' : 'nopin');
-          if (ok && onPlaceRef.current) onPlaceRef.current(found);
+          // Always tell the form where the pin is (the form keeps its own pincode if the map found none)
+          if (onPlaceRef.current) onPlaceRef.current(found);
         } catch (e) {
           if (id !== reqRef.current) return;
           setPlace(null);
           setStatus('error');
+          // The address lookup failed, but the pin position is still valid
+          if (onPlaceRef.current) onPlaceRef.current({ lat: c.lat, lng: c.lng });
         }
       }, 600);
     };
 
     map.on('moveend', lookup);
+    // Touching the map closes the search results
+    map.on('click dragstart zoomstart', () => closeSearchRef.current());
+    // The customer moves the pin by hand: use the pin's own address again, not the searched one
+    map.on('dragstart', () => {
+      pickedRef.current = null;
+    });
     if (start) lookup();
 
     return () => {
@@ -88,12 +130,16 @@ export default function MapPicker({ start, onConfirm, onClose, embedded = false,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Full screen mode: Escape closes only the map, not the sheet behind it
+  // Full screen mode: Escape closes the search first, then only the map, not the sheet behind it
   useEffect(() => {
     if (embedded) return undefined;
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       e.stopImmediatePropagation();
+      if (searchOpenRef.current) {
+        closeSearchRef.current();
+        return;
+      }
       onClose();
     };
     window.addEventListener('keydown', onKey, true);
@@ -132,6 +178,38 @@ export default function MapPicker({ start, onConfirm, onClose, embedded = false,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Search: runs on Enter or the search icon (not on every key, to respect the geocoder's usage rules)
+  const runSearch = async () => {
+    const text = query.trim();
+    setNotice('');
+    if (text.length < 3) {
+      setResults([]);
+      return;
+    }
+    const id = ++searchReq.current;
+    setSearching(true);
+    try {
+      const c = mapRef.current?.getCenter();
+      const res = await searchPlaces(text, c?.lat, c?.lng);
+      if (id !== searchReq.current) return;
+      const list = Array.isArray(res.data) ? res.data : res.data?.data || [];
+      setResults(list);
+    } catch (e) {
+      if (id !== searchReq.current) return;
+      setResults([]);
+      setNotice('Search did not work. Please try again.');
+    } finally {
+      if (id === searchReq.current) setSearching(false);
+    }
+  };
+
+  const pickResult = (r) => {
+    closeSearch();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    pickedRef.current = r;
+    mapRef.current?.setView([r.lat, r.lng], 17);
+  };
+
   const parts = place
     ? [place.area, place.city, place.state].filter((v, i, a) => v && a.indexOf(v) === i)
     : [];
@@ -155,7 +233,7 @@ export default function MapPicker({ start, onConfirm, onClose, embedded = false,
     sub = `${parts.join(', ')}${parts.length ? ' - ' : ''}${place.pincode}`;
   }
 
-  const barText = status === 'ok' || status === 'nopin' ? parts.join(', ') || title : 'Move the map to set your location';
+  const barText = status === 'ok' || status === 'nopin' ? parts.join(', ') || title : '';
 
   const content = (
     <div
@@ -183,14 +261,84 @@ export default function MapPicker({ start, onConfirm, onClose, embedded = false,
       <div className="relative min-h-0 flex-1">
         <div ref={boxRef} className="absolute inset-0 z-0" />
 
-        {/* Address bar (shows the address under the pin) */}
-        <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex h-12 items-center gap-2.5 rounded-xl bg-white px-3 shadow-lg">
-          <svg viewBox="0 0 24 24" className="size-6 shrink-0 text-brand" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-3.5-3.5" />
-          </svg>
-          <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-slate-700">{barText}</span>
+        {/* Search bar: shows the address under the pin, type here to search another place */}
+        <div className="absolute inset-x-3 top-3 z-20 flex h-12 items-center gap-1 rounded-xl bg-white pl-3 pr-1.5 shadow-lg">
+          <button
+            type="button"
+            onClick={runSearch}
+            aria-label="Search"
+            className="grid size-8 shrink-0 place-items-center rounded-full text-brand active:bg-slate-100"
+          >
+            <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+          </button>
+          <input
+            type="text"
+            value={editing ? query : barText}
+            placeholder="Search area, landmark or pincode"
+            enterKeyHint="search"
+            autoComplete="off"
+            aria-label="Search for a place"
+            onFocus={() => {
+              setEditing(true);
+              setQuery('');
+            }}
+            onChange={(e) => {
+              setEditing(true);
+              setQuery(e.target.value);
+              setResults(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault(); // do not submit a form this map may sit inside
+                runSearch();
+              }
+            }}
+            className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-slate-700 outline-none placeholder:font-medium placeholder:text-slate-400"
+          />
+          {searching && <span className="px-2 text-xs font-semibold text-slate-500">Searching...</span>}
+          {editing && !searching && (query || results !== null) && (
+            <button
+              type="button"
+              onClick={closeSearch}
+              aria-label="Clear search"
+              className="grid size-8 shrink-0 place-items-center rounded-full text-slate-500 active:bg-slate-100"
+            >
+              <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          )}
         </div>
+
+        {/* Search results */}
+        {editing && results !== null && (
+          <div className="absolute inset-x-3 top-[4.25rem] z-20 max-h-64 overflow-y-auto rounded-xl bg-white shadow-lg">
+            {results.length === 0 ? (
+              <p className="px-3.5 py-3 text-[13px] font-semibold text-slate-500">
+                {query.trim().length < 3
+                  ? 'Type at least 3 letters, then press Enter.'
+                  : 'No place found. Try the society name with its area (like "Lilamani Vatva"), a nearby landmark, or move the pin by hand.'}
+              </p>
+            ) : (
+              results.map((r, i) => (
+                <button
+                  key={`${r.lat}-${r.lng}-${i}`}
+                  type="button"
+                  onClick={() => pickResult(r)}
+                  className="flex w-full items-start gap-2.5 border-b border-slate-100 px-3.5 py-2.5 text-left last:border-b-0 active:bg-slate-50"
+                >
+                  <svg viewBox="0 0 24 24" className="mt-0.5 size-4 shrink-0 text-slate-500" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 119.5 9 2.5 2.5 0 0112 11.5z" />
+                  </svg>
+                  <span className="line-clamp-2 text-[13px] font-semibold leading-snug text-slate-700">{r.label}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
 
         {/* Centre pin: its tip sits exactly on the map centre */}
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full">
@@ -238,7 +386,7 @@ export default function MapPicker({ start, onConfirm, onClose, embedded = false,
         {!embedded && (
           <button
             type="button"
-            disabled={status !== 'ok'}
+            disabled={status !== 'ok' && status !== 'nopin'}
             onClick={() => onConfirm(place)}
             className="mt-3 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-brand text-[17px] font-extrabold text-white active:bg-brand-dark disabled:bg-slate-300"
           >

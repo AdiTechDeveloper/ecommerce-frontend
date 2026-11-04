@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getPincode } from '../pincode.js';
 
@@ -45,6 +45,45 @@ const joinLine1 = (label, f) => {
     .join(', ');
 };
 
+// Words that are not a real address
+const JUNK_WORDS = new Set([
+  'na', 'n/a', 'none', 'nil', 'no', 'test', 'testing', 'abc', 'abcd', 'xyz', 'asdf', 'qwerty',
+  'home', 'house', 'flat', 'room', 'office', 'hotel', 'address', 'my home', 'my house', 'ghar',
+]);
+
+// Keyboard mashing ("fgnlkgnfklgfgrgwdthnjgfnj...") instead of a real name?
+// No tool can prove a building exists, but these rules catch random typing.
+const looksLikeGibberish = (s) => {
+  const words = s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return words.some((w) => {
+    if (/^\d+$/.test(w)) return false;
+    if (w.length > 22) return true; // no real word is this long
+    if (/^(.{3,4})\1+$/u.test(w)) return true; // "asdasd", "abcabcabc"
+    if (/^[a-z]+$/.test(w)) {
+      // English letters only (Hindi / Gujarati names are not checked)
+      if (w.length >= 4 && !/[aeiouy]/.test(w)) return true; // no vowel at all: "ghjk"
+      if (/[^aeiouy]{6,}/.test(w)) return true; // 6+ consonants in a row: "sdfghjkl"
+    }
+    return false;
+  });
+};
+
+// Is the flat / building text a real one? Returns an error message, or '' when it looks fine.
+// A flat number alone ("402") is not enough: the delivery partner needs the society / building name too.
+const checkBuilding = (value, label) => {
+  const s = value.trim().replace(/\s+/g, ' ');
+  const what = label === 'hotel' ? 'hotel name' : label === 'work' ? 'office / building name' : 'flat / building name';
+  if (s.length < 3) return `Please enter your ${what}.`;
+  if (JUNK_WORDS.has(s.toLowerCase()) || /^(.)\1{2,}$/u.test(s)) return `Please enter your real ${what}.`;
+  if (!/\p{L}{3,}/u.test(s)) {
+    return label === 'hotel'
+      ? 'Please enter the hotel name.'
+      : 'Please add your society or building name along with the flat / house number (example: A-402, Lilamani Heights).';
+  }
+  if (looksLikeGibberish(s)) return `This does not look like a real ${what}. Please check it.`;
+  return '';
+};
+
 // true on tablets / laptops / desktops (768px and wider)
 function useIsWide() {
   const query = '(min-width: 768px)';
@@ -62,6 +101,9 @@ function useIsWide() {
 // initial: existing address (edit) or null (new). Props: initial, loginMobile, isFirst, onSave, onCancel.
 //  - Phones: step 1 full screen map, step 2 bottom sheet with the details.
 //  - Big screens: one modal, map on the left, details on the right (moving the pin updates the address live).
+//
+// The map fills: area, city, pincode (always), and landmark + building (only while the customer has not typed there).
+// Floor is never filled. The exact pin (lat, lng) is saved with the address for the delivery partner.
 export default function AddressForm({ initial, loginMobile, isFirst, onSave, onCancel }) {
   const wide = useIsWide();
   const [f, setF] = useState(() => ({
@@ -79,16 +121,26 @@ export default function AddressForm({ initial, loginMobile, isFirst, onSave, onC
   }));
   const [stage, setStage] = useState(initial ? 'form' : 'map'); // phones only: map | form
   const [formSeen, setFormSeen] = useState(!!initial);
-  const [lastPos, setLastPos] = useState(null);
+  // Exact pin. An existing address brings its own saved pin.
+  const [lastPos, setLastPos] = useState(() =>
+    initial?.lat != null && initial?.lng != null ? { lat: Number(initial.lat), lng: Number(initial.lng) } : null
+  );
   const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+  // Boxes the customer typed in: the map never overwrites them.
+  // An existing address is already "typed", so editing it never loses what is saved.
+  const touched = useRef(initial ? { building: true, landmark: true } : {});
+
+  const set = (k) => (e) => {
+    touched.current[k] = true;
+    setF((s) => ({ ...s, [k]: e.target.value }));
+  };
   const setDigits = (k, max) => (e) =>
     setF((s) => ({ ...s, [k]: e.target.value.replace(/\D/g, '').slice(0, max) }));
 
-  // Place picked on the map: pincode, city and area come from the pin
+  // Place picked on the map (pin moved or a search result chosen)
   const applyPlace = (d) => {
     setLastPos({ lat: d.lat, lng: d.lng });
     setF((s) => ({
@@ -96,6 +148,10 @@ export default function AddressForm({ initial, loginMobile, isFirst, onSave, onC
       pincode: d.pincode || s.pincode,
       city: d.city || s.city,
       line2: d.area || s.line2,
+      // Landmark and building: filled from the map, or cleared again if the new spot has none.
+      // Once the customer types in them, they are left alone.
+      building: touched.current.building ? s.building : d.house || '',
+      landmark: touched.current.landmark ? s.landmark : d.landmark || '',
     }));
   };
 
@@ -135,6 +191,9 @@ export default function AddressForm({ initial, loginMobile, isFirst, onSave, onC
   const placeOk = /^\d{6}$/.test(f.pincode) && f.city.trim() && f.line2.trim();
   const showManual = manual || !placeOk;
 
+  // The map found the spot but not the building name: ask the customer to type it
+  const buildingMissing = !!lastPos && !touched.current.building && !f.building.trim();
+
   const submit = async (e) => {
     e.preventDefault();
     if (busy) return;
@@ -145,6 +204,16 @@ export default function AddressForm({ initial, loginMobile, isFirst, onSave, onC
       }
     }
     const t = (v) => v.trim();
+
+    // Real flat / society name, not a random word
+    const buildingError = checkBuilding(f.building, f.label);
+    if (buildingError) return setError(buildingError);
+
+    // The delivery partner navigates to this exact pin, so it is a must
+    if (!lastPos) {
+      return setError('Please set your exact location on the map. The delivery partner uses this pin to reach you.');
+    }
+
     const line1 = joinLine1(f.label, f);
     if (line1.length > 150) return setError('Address details are too long. Please shorten them.');
     if (!t(f.line2)) return setError('Pick your location on the map, or enter area / street.');
@@ -166,6 +235,9 @@ export default function AddressForm({ initial, loginMobile, isFirst, onSave, onC
         city: t(f.city),
         pincode: f.pincode,
         is_default: !!f.is_default,
+        // Exact spot, for the delivery partner and the tracking. Null if the address was typed by hand.
+        lat: lastPos ? Number(Number(lastPos.lat).toFixed(6)) : null,
+        lng: lastPos ? Number(Number(lastPos.lng).toFixed(6)) : null,
       });
     } catch (err) {
       setError(err.message);
@@ -251,16 +323,25 @@ export default function AddressForm({ initial, loginMobile, isFirst, onSave, onC
           ))}
         </div>
 
-        {fields.map((fd) => (
-          <input
-            key={`${f.label}-${fd.k}`}
-            className={inputCls}
-            placeholder={fd.placeholder}
-            value={f[fd.k]}
-            onChange={set(fd.k)}
-            maxLength={80}
-            enterKeyHint="next"
-          />
+        {fields.map((fd, i) => (
+          <div key={`${f.label}-${fd.k}`} className="grid gap-1">
+            <input
+              className={inputCls}
+              placeholder={fd.placeholder}
+              value={f[fd.k]}
+              onChange={set(fd.k)}
+              maxLength={80}
+              enterKeyHint="next"
+            />
+            {i === 0 && buildingMissing && (
+              <p className="px-1 text-xs font-semibold text-slate-500">
+                The map could not find the building name here. Please type it.
+              </p>
+            )}
+            {i === 0 && !buildingMissing && (f.label === 'home' || f.label === 'other') && (
+              <p className="px-1 text-xs text-slate-500">Include your society or building name, like "A-402, Lilamani Heights".</p>
+            )}
+          </div>
         ))}
         <input
           className={inputCls}

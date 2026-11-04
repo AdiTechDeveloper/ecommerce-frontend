@@ -1,11 +1,11 @@
 import { money } from '../api.js';
-import { stepFor, useCart ,maxFor} from '../cart/CartContext.jsx';
+import { stepFor, useCart, maxFor } from '../cart/CartContext.jsx';
 import { tintFor } from '../tint.js';
 import { ClockIcon } from './icons.jsx';
 import QtyStepper from './QtyStepper.jsx';
-// Blinkit-style card: image, small time pill, name, then price on the left and ADD / stepper on the right.
-// prep = store.prep_minutes (0 = pill hidden)
-export default function ProductCard({ product, onAdd, prep = 0 }) {
+
+// Compact card: square image, name (2 lines), price, ADD / stepper.
+export default function ProductCard({ product, onAdd }) {
   const p = product;
   const { cart, setQty } = useCart();
   const line = cart.items[p.id];
@@ -14,10 +14,11 @@ export default function ProductCard({ product, onAdd, prep = 0 }) {
   const imageSrc = p.image_url || p.image;
 
   return (
-    <article className="flex flex-col rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3">
+    <article className="flex flex-col rounded-xl border border-slate-200 bg-white p-2 sm:p-3">
       <div
-        className={`relative grid aspect-square place-items-center overflow-hidden rounded-lg ${p.in_stock ? '' : 'opacity-50'
-          }`}
+        className={`relative grid aspect-square place-items-center overflow-hidden rounded-lg ${
+          p.in_stock ? '' : 'opacity-50'
+        }`}
         style={{ background: tintFor(p.name) }}
       >
         {imageSrc ? (
@@ -41,32 +42,28 @@ export default function ProductCard({ product, onAdd, prep = 0 }) {
         )}
       </div>
 
-      {prep > 0 && (
-        <span className="mt-2 inline-flex w-fit items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-extrabold text-slate-700">
-          <ClockIcon className="size-3" />
-          {prep} MINS
-        </span>
-      )}
-
-      <h4
+      {/* Exactly 2 lines ki fixed height (mobile 16px x 2 = h-8, sm+ 18px x 2 = h-9): lamba naam "..." ke saath kat jayega, teesri line kabhi nahi dikhegi */}
+      <h3
         title={p.name}
-        className="mt-1.5 line-clamp-2 min-h-[2.5rem] text-[13px] font-semibold leading-tight sm:text-sm sm:leading-tight"
+        className="mt-1.5 line-clamp-2 h-8 overflow-hidden text-xs font-semibold leading-4 sm:h-9 sm:text-sm sm:leading-[18px]"
       >
         {p.name}
-      </h4>
+      </h3>
 
-      <div className="mt-auto flex flex-col gap-2 pt-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 leading-tight">
+      <div className="mt-auto flex flex-col gap-1.5 pt-1.5 sm:gap-2 sm:pt-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 leading-tight sm:block">
           <div className="text-sm font-extrabold">
             {money(p.price)}
             {perKg && <span className="text-xs font-medium text-slate-500">/kg</span>}
           </div>
-          {p.discount_percent > 0 && <div className="text-xs text-slate-400 line-through">{money(p.mrp)}</div>}
+          {p.discount_percent > 0 && (
+            <div className="text-[11px] text-slate-400 line-through sm:text-xs">{money(p.mrp)}</div>
+          )}
         </div>
 
         <div className="w-full shrink-0 sm:w-[92px]">
           {!p.in_stock ? (
-            <span className="grid h-11 place-items-center rounded-lg bg-slate-100 text-center text-xs font-bold text-slate-500 sm:h-9">
+            <span className="grid h-9 place-items-center rounded-lg bg-slate-100 text-center text-xs font-bold text-slate-500 sm:h-9">
               Out of stock
             </span>
           ) : line ? (
@@ -74,7 +71,7 @@ export default function ProductCard({ product, onAdd, prep = 0 }) {
               qty={line.qty}
               unit={p.price_unit}
               step={stepFor(p.price_unit)}
-             max={maxFor(p)}
+              max={maxFor(p)}
               compact
               onChange={(q) => setQty(p.id, q)}
               className="w-full justify-between sm:h-9"
@@ -83,7 +80,7 @@ export default function ProductCard({ product, onAdd, prep = 0 }) {
             <button
               type="button"
               onClick={() => onAdd(p)}
-              className="h-11 w-full rounded-lg border border-brand bg-[#f7fff9] text-sm font-extrabold text-brand active:bg-brand-soft sm:h-9 sm:hover:bg-brand-soft"
+              className="h-9 w-full rounded-lg border border-brand bg-[#f7fff9] text-sm font-extrabold text-brand active:bg-brand-soft sm:h-9 sm:hover:bg-brand-soft"
             >
               ADD
             </button>
@@ -93,8 +90,8 @@ export default function ProductCard({ product, onAdd, prep = 0 }) {
 
       {low && <p className="mt-1.5 text-[11px] font-bold text-tomato">Only {p.online_qty} left</p>}
       {line && p.max_per_order != null && line.qty >= Number(p.max_per_order) && (
-  <p className="mt-1.5 text-[11px] font-bold text-slate-500">Max {p.max_per_order} per order</p>
-)}
+        <p className="mt-1.5 text-[11px] font-bold text-slate-500">Max {p.max_per_order} per order</p>
+      )}
     </article>
   );
 }

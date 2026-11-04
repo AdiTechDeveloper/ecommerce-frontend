@@ -7,6 +7,7 @@ import CartBar from '../components/CartBar.jsx';
 import { useOpenCart } from '../cart/CartDrawer.jsx';
 import { BackIcon } from '../components/icons.jsx';
 import ProductCard from '../components/ProductCard.jsx';
+import SearchBox from '../components/SearchBox.jsx';
 import { usePincode } from '../pincode.js';
 import { tintFor } from '../tint.js';
 
@@ -26,8 +27,27 @@ function StorePage({ slug }) {
   const otherStore = hasOtherStore(slug); // cart mein kisi aur store ka saaman hai
 
   // Product search box is the one in the site header (App.jsx). It writes ?q= into the URL.
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const search = (params.get('q') || '').trim();
+
+  // Mobile pe search bar chhupa rehta hai; icon dabane par khulta hai
+  const [showSearch, setShowSearch] = useState(search !== '');
+  const toggleSearch = () => {
+    if (showSearch) setParams({}, { replace: true }); // band karte waqt search saaf
+    setShowSearch((v) => !v);
+  };
+
+  // Sticky store bar (row + search) ki height measure karo, rail ke top ke liye
+  const [bar, setBar] = useState(null);
+  const [barH, setBarH] = useState(73);
+  useEffect(() => {
+    if (!bar) return undefined;
+    const set = () => setBarH(bar.offsetHeight);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [bar]);
 
   const [store, setStore] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -139,8 +159,10 @@ function StorePage({ slug }) {
   const activeCategory = categories.find((c) => String(c.id) === String(categoryId));
 
   return (
-    <div className="mx-auto max-w-7xl bg-white">
-      {/* Which store you are in: back, name, open/closed, change store */}
+    <div className="mx-auto max-w-7xl bg-white" style={{ '--store-bar-h': `${barH}px` }}>
+      {/* STICKY: store row (back, name, open/closed, change store).
+          Chipakta hai site header / search bar ke neeche. Height ~73px. */}
+      <div ref={setBar} className="sticky top-[var(--app-header-h,65px)] z-20 bg-white">
       <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-3 md:px-4">
         <button
           type="button"
@@ -162,6 +184,35 @@ function StorePage({ slug }) {
             {store.address ? ` · ${store.address}` : ''}
           </p>
         </div>
+        {/* Search icon: sirf mobile pe (desktop pe header mein search bar hai) */}
+        <button
+          type="button"
+          onClick={toggleSearch}
+          aria-label={showSearch ? 'Close search' : 'Search products'}
+          aria-expanded={showSearch}
+          className={`grid size-10 shrink-0 place-items-center rounded-lg border md:hidden ${
+            showSearch ? 'border-brand bg-brand-soft text-brand' : 'border-slate-200 active:bg-slate-50'
+          }`}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="size-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            {showSearch ? (
+              <path d="M6 6l12 12M18 6L6 18" />
+            ) : (
+              <>
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-3.5-3.5" />
+              </>
+            )}
+          </svg>
+        </button>
         <Link
           to="/"
           className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold active:bg-slate-50 md:hover:border-brand"
@@ -170,6 +221,18 @@ function StorePage({ slug }) {
         </Link>
       </div>
 
+      {showSearch && (
+        <div className="border-b border-slate-100 bg-white px-3 py-2 md:hidden">
+          <SearchBox
+            autoFocus
+            placeholder="Search products in this store"
+            label="Search products"
+          />
+        </div>
+      )}
+      </div>
+
+      {/* Ye banners normal scroll hote hain (sticky nahi) */}
       {!store.is_open_now && (
         <p className="bg-red-50 px-4 py-2 text-sm text-tomato">
           This store is closed right now.
@@ -209,8 +272,9 @@ function StorePage({ slug }) {
       )}
 
       <div className="flex">
-        {/* Left category rail. Sticks below the sticky search bar (phone) or header (md+) */}
-        <aside className="no-scrollbar sticky top-[65px] h-[calc(100dvh-65px)] w-[84px] shrink-0 overflow-y-auto border-r border-slate-100 bg-white pb-6 md:top-[89px] md:h-[calc(100dvh-89px)] md:w-[104px]">
+        {/* Left category rail. Ab sticky store row ke neeche chipakta hai:
+            65 + 73 = 138 (phone), 89 + 73 = 162 (md+) */}
+        <aside className="no-scrollbar sticky top-[calc(var(--app-header-h,65px)+var(--store-bar-h,73px))] h-[calc(100dvh-var(--app-header-h,65px)-var(--store-bar-h,73px))] w-[84px] shrink-0 overflow-y-auto border-r border-slate-100 bg-white pb-6 md:w-[104px]">
           <RailItem label="All" active={categoryId === ''} onClick={() => setCategoryId('')} all />
           {categories.map((c) => (
             <RailItem
@@ -242,7 +306,7 @@ function StorePage({ slug }) {
           ) : (
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-3 lg:grid-cols-4 xl:grid-cols-5">
               {products.map((p) => (
-                <ProductCard key={p.id} product={p} onAdd={onAdd} prep={store.prep_minutes} />
+                <ProductCard key={p.id} product={p} onAdd={onAdd} />
               ))}
 
               {loadingProducts &&
