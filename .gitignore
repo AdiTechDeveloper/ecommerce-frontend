@@ -1,6 +1,26 @@
-build/
-dist/
-node_modules/
-.env.development
-.env.production
+# Dependencies
+node_modules
+
+# Build output (GitHub Actions khud build karta hai)
+dist
+dist-ssr
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Local-only env files. Inme local overrides ya secrets ho sakte hain, GitHub pe nahi jane chahiye.
+# NOTE: .env.development aur .env.production commit hote hain (inme sirf public API URL hai).
 .env
+.env.local
+.env.*.local
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?

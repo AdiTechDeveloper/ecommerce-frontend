@@ -21,7 +21,22 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          VITE_API_URL: https://api.vakaro.in
+          # Storefront ka src/api.js "VITE_API_BASE" padhta hai (VITE_API_URL nahi).
+          VITE_API_BASE: https://api.vakaro.in/api/public
+
+      # Safety: build mein live API URL na gaya ho ya local URL ghus gaya ho to upload hi nahi hoga
+      - name: Check live API URL is inside the build
+        run: |
+          if ! grep -rq "https://api.vakaro.in/api/public" dist/assets; then
+            echo "ERROR: live API URL build mein nahi mila. Deploy rok diya."
+            exit 1
+          fi
+          if grep -rqE "127\.0\.0\.1|localhost" dist/assets; then
+            echo "ERROR: build mein local URL mila. Deploy rok diya."
+            exit 1
+          fi
+          echo "OK: build mein sirf live API URL hai."
+
       - uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -29,4 +44,3 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
           server-dir: ./
-        
