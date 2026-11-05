@@ -87,7 +87,10 @@ export default function HomePage() {
       }
     }
     // Delivers to me first, then open stores
-    const rank = (s) => (servingSlugs?.has(s.slug) ? 2 : 0) + (s.is_open_now ? 1 : 0);
+    const rank = (s) =>
+      (s.is_open_now ? 2 : 0) +
+      (servingSlugs?.has(s.slug) ? 1 : 0);
+
     return [...list].sort((a, b) => rank(b) - rank(a));
   }, [stores, text, pincode, servingSlugs]);
 
@@ -131,8 +134,8 @@ export default function HomePage() {
             {pincode
               ? `${filtered.length} ${filtered.length === 1 ? 'store delivers' : 'stores deliver'} to ${pincode}`
               : showServing
-              ? `${servingCount} of ${filtered.length} stores deliver to ${nearPin}`
-              : `${filtered.length} ${filtered.length === 1 ? 'store' : 'stores'}`}
+                ? `${servingCount} of ${filtered.length} stores deliver to ${nearPin}`
+                : `${filtered.length} ${filtered.length === 1 ? 'store' : 'stores'}`}
           </p>
         )}
       </div>
@@ -160,8 +163,8 @@ export default function HomePage() {
             {pincode
               ? 'No store delivers to this pincode yet'
               : searching
-              ? 'No store found with that name'
-              : 'No stores are online yet'}
+                ? 'No store found with that name'
+                : 'No stores are online yet'}
           </h2>
           {searching && (
             <>
