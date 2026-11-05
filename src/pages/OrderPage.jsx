@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getOrder, money } from '../api.js';
+import { cancelOrder, getOrder, money } from '../api.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import BottomSheet from '../components/BottomSheet.jsx';
+
+// The live map (leaflet) is downloaded only when the customer taps "Track"
+const TrackMap = lazy(() => import('../components/TrackMap.jsx'));
 
 const STATUS = {
   placed: 'Order placed',
@@ -36,6 +40,17 @@ const qtyText = (i) => (i.price_unit === 'kg' ? `${i.qty} kg` : `${i.qty}`);
 
 const clockText = (iso) =>
   iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '';
+
+// "today, 6:30 PM" / "tomorrow, 10:00 AM" / "8 Nov, 10:00 AM": for a delivery time that is hours or days away
+const whenText = (iso) => {
+  const d = new Date(iso);
+  const dayStart = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((dayStart(d) - dayStart(new Date())) / 86400000);
+  const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  if (diffDays <= 0) return `today, ${time}`;
+  if (diffDays === 1) return `tomorrow, ${time}`;
+  return `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${time}`;
+};
 
 function Tracker({ order, isDelivery }) {
   const steps = isDelivery ? STEPS_DELIVERY : STEPS_PICKUP;
@@ -110,6 +125,10 @@ export default function OrderPage() {
   const [loading, setLoading] = useState(true);
   const [fetchedAt, setFetchedAt] = useState(Date.now());
   const [, setTick] = useState(0);
+  const [showTrack, setShowTrack] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState('');
 
   // silent = refresh in the background (no skeleton, no error screen)
   const load = useCallback(
@@ -142,6 +161,22 @@ export default function OrderPage() {
   }, [load]);
 
   const active = !!order && ACTIVE.includes(order.status);
+
+  // Customer can cancel only until the store accepts the order
+  const doCancel = async () => {
+    setCancelBusy(true);
+    setCancelError('');
+    try {
+      await cancelOrder(orderNo);
+      setCancelOpen(false);
+      load(true);
+    } catch (e) {
+      setCancelError(e.message);
+      if (e.status === 409) load(true); // the store accepted it in the meantime
+    } finally {
+      setCancelBusy(false);
+    }
+  };
 
   // While the order is on its way: ask the server again every 20 seconds
   useEffect(() => {
@@ -198,6 +233,7 @@ export default function OrderPage() {
   if (cancelled) headline = 'Order cancelled';
   else if (delivered) headline = isDelivery ? 'Delivered' : 'Picked up';
   else if (order.status === 'ready' && !isDelivery) headline = 'Ready for pickup';
+  else if (minsLeft != null && minsLeft > 180 && order.eta_at) headline = `Expected by ${whenText(order.eta_at)}`;
   else if (minsLeft == null) headline = STATUS[order.status] || order.status;
   else if (minsLeft <= 1) headline = isDelivery ? 'Arriving any moment' : 'Ready any moment';
   else headline = `${isDelivery ? 'Arriving' : 'Ready'} in ${minsLeft} min`;
@@ -235,6 +271,25 @@ export default function OrderPage() {
         {active && <p className="text-xs text-slate-500">This page updates by itself.</p>}
       </div>
 
+      {/* The store moved the delivery time (and why) */}
+      {order.eta_note && active && (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-bold">Delivery time updated by the store</p>
+          <p className="mt-0.5">{order.eta_note}</p>
+        </div>
+      )}
+
+      {/* Live map of the delivery partner */}
+      {isDelivery && order.status === 'out_for_delivery' && (
+        <button
+          type="button"
+          onClick={() => setShowTrack(true)}
+          className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-brand text-[17px] font-extrabold text-white active:bg-brand-dark"
+        >
+          Track delivery partner
+        </button>
+      )}
+
       {/* OTP: the customer tells it to the delivery partner when the order arrives */}
       {order.delivery_otp && (
         <div className="mt-4 rounded-2xl border border-brand/30 bg-white p-4 text-center">
@@ -251,7 +306,43 @@ export default function OrderPage() {
         </div>
       )}
 
+      {showTrack && (
+        <Suspense fallback={null}>
+          <TrackMap orderNo={order.order_no} onClose={() => setShowTrack(false)} />
+        </Suspense>
+      )}
+
       {!cancelled && <Tracker order={order} isDelivery={isDelivery} />}
+
+      {/* Cancel: only while the store has not accepted the order yet */}
+      {order.status === 'placed' && (
+        <button
+          type="button"
+          onClick={() => {
+            setCancelError('');
+            setCancelOpen(true);
+          }}
+          className="mt-4 h-12 w-full rounded-xl border-2 border-tomato font-bold text-tomato active:bg-red-50"
+        >
+          Cancel order
+        </button>
+      )}
+      {['accepted', 'preparing', 'ready', 'out_for_delivery'].includes(order.status) && (
+        <p className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+          The store has already started on this order, so it cannot be cancelled here.{' '}
+          {order.store.phone ? (
+            <>
+              To cancel, please call{' '}
+              <a href={`tel:${order.store.phone}`} className="font-bold text-brand-dark underline">
+                {order.store.phone}
+              </a>
+              .
+            </>
+          ) : (
+            'Please call the store to cancel.'
+          )}
+        </p>
+      )}
 
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
         <h2 className="text-base font-extrabold">{isDelivery ? 'Delivering to' : 'Pickup from'}</h2>
@@ -314,6 +405,32 @@ export default function OrderPage() {
           {order.payment_method === 'cod' ? 'Cash on delivery' : 'Pay at the store'}
         </p>
       </div>
+
+      <BottomSheet open={cancelOpen} onClose={() => !cancelBusy && setCancelOpen(false)} title="Cancel this order?">
+        <p className="mt-1 text-sm text-slate-600">
+          Order <span className="font-bold">{order.order_no}</span> from {order.store.name} will be cancelled. This cannot
+          be undone.
+        </p>
+        {cancelError && <p className="mt-3 text-sm font-semibold text-tomato">{cancelError}</p>}
+        <div className="mt-4 grid gap-2">
+          <button
+            type="button"
+            disabled={cancelBusy}
+            onClick={doCancel}
+            className="h-12 rounded-xl border-2 border-tomato font-bold text-tomato active:bg-red-50 disabled:opacity-50"
+          >
+            {cancelBusy ? 'Cancelling...' : 'Yes, cancel order'}
+          </button>
+          <button
+            type="button"
+            disabled={cancelBusy}
+            onClick={() => setCancelOpen(false)}
+            className="h-12 rounded-xl font-bold text-slate-600 active:bg-slate-50"
+          >
+            Keep order
+          </button>
+        </div>
+      </BottomSheet>
 
       <div className="mt-5 grid gap-2">
         <Link

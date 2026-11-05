@@ -1,3 +1,10 @@
+// # Production (store.vakro.in) ke liye: Laravel API ka poora public URL
+// # # Dev mein khali chhod do, Vite proxy use hoga.
+// #  VITE_API_BASE=/api/public
+// #  VITE_API_BASE=/api/public
+//  VITE_API_BASE=https://api.vakro.in/api/public
+
+
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   Link,

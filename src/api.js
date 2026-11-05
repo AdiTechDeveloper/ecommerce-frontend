@@ -16,8 +16,24 @@ const MEDIA_ORIGIN = (() => {
 
 export const mediaUrl = (path) => {
   if (!path) return null;
-  return /^https?:\/\//i.test(path) ? path : `${MEDIA_ORIGIN}${path}`;
+
+  if (/^https?:\/\//i.test(path)) {
+    // Backend apna host URL mein daal deta hai (dev mein http://127.0.0.1:8000/storage/...). Phone pe 127.0.0.1
+    // phone khud hota hai, isliye image nahi khulti. /storage ke URL ko hamesha isi site ke media origin se banao.
+    try {
+      const u = new URL(path);
+      if (u.pathname.startsWith('/storage/')) return `${MEDIA_ORIGIN}${u.pathname}${u.search}`;
+    } catch {
+      /* galat URL: jaisa hai waisa */
+    }
+    return path;
+  }
+
+  return `${MEDIA_ORIGIN}${path}`;
 };
+
+export const getOrderTrack = (orderNo) =>
+     get(`/orders/${encodeURIComponent(orderNo)}/track`);
 
 export class ApiError extends Error {
   constructor(message, status, data) {
@@ -120,7 +136,7 @@ export const getCategories = (slug) =>
 export const getProducts = (slug, params) =>
   get(`/stores/${slug}/products`, params).then((res) => ({
     ...res,
-    data: (res.data || []).map((p) => ({ ...p, image: mediaUrl(p.image) })),
+    data: (res.data || []).map((p) => ({ ...p, image: mediaUrl(p.image), image_url: mediaUrl(p.image_url) })),
   }));
 
 // Location and pincode
