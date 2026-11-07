@@ -1,9 +1,3 @@
-// # Production (store.vakro.in) ke liye: Laravel API ka poora public URL
-// # # Dev mein khali chhod do, Vite proxy use hoga.
-// #  VITE_API_BASE=/api/public
-// #  VITE_API_BASE=/api/public
-//  VITE_API_BASE=https://api.vakro.in/api/public
-
 
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
@@ -25,7 +19,6 @@ import { openLocationSheet, useLocationState } from './location.js';
 import HomePage from './pages/HomePage.jsx';
 import { usePincode } from './pincode.js';
 
-// Lazy-loaded pages
 const StorePage = lazy(() => import('./pages/StorePage.jsx'));
 const CartPage = lazy(() => import('./pages/CartPage.jsx'));
 const OrderPage = lazy(() => import('./pages/OrderPage.jsx'));
@@ -80,7 +73,6 @@ function HeaderCart() {
   );
 }
 
-// Account dropdown
 function AccountMenu() {
   const { customer, openLogin, logout } = useAuth();
   const [open, setOpen] = useState(false);
@@ -149,7 +141,6 @@ function AccountMenu() {
         className="flex h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl px-2 text-lg font-semibold active:bg-slate-100 md:h-14 md:px-4 md:hover:bg-slate-100"
       >
         {icon}
-
         <span className="hidden md:inline">Account</span>
 
         <svg
@@ -199,35 +190,39 @@ function AccountMenu() {
   );
 }
 
-// Location selector: GPS or manually entered pincode
+// Location selector
 function LocationButton({ variant }) {
   const pincode = usePincode();
   const { loc, status } = useLocationState();
 
-  const area =
-    loc && loc.pincode === pincode
-      ? [loc.area, loc.city].filter(Boolean).join(', ')
-      : '';
+  const hasValidLocation =
+    Boolean(pincode) &&
+    Boolean(loc) &&
+    loc.pincode === pincode &&
+    ['gps', 'manual'].includes(loc.source);
+
+  const area = hasValidLocation
+    ? [loc.area, loc.city].filter(Boolean).join(', ')
+    : '';
 
   const detecting = status === 'detecting';
 
-  // No location yet and the customer refused / it failed: show a red hint instead of a pincode
-  const failed =
-    !pincode &&
-    !detecting &&
-    (status === 'denied' || status === 'error' || status === 'unsupported');
-
   const title = detecting
     ? 'Finding your location...'
-    : pincode
+    : hasValidLocation
       ? `Delivering to ${pincode}`
       : 'Set your location';
 
   const sub = detecting
-    ? 'Please allow location access'
-    : failed
-      ? 'Location not allowed. Tap to enter pincode'
-      : area || (pincode ? 'Tap to change location' : 'Choose your area');
+    ? 'Please wait...'
+    : hasValidLocation
+      ? area || 'Tap to change location'
+      : 'Choose your area';
+
+  const failed =
+    !hasValidLocation &&
+    !detecting &&
+    ['denied', 'error', 'unsupported'].includes(status);
 
   const label = `${title}. ${sub}. Change location`;
 
@@ -254,16 +249,22 @@ function LocationButton({ variant }) {
         aria-label={label}
         className="flex w-full items-center gap-2 px-4 pb-2.5 text-left text-sm md:hidden"
       >
-        <PinIcon className={`size-5 shrink-0 ${failed ? 'text-tomato' : 'text-brand'}`} />
+        <PinIcon
+          className={`size-5 shrink-0 ${
+            failed ? 'text-tomato' : 'text-brand'
+          }`}
+        />
 
-        <span className="shrink-0 font-extrabold">{title}</span>
+        <span className="shrink-0 font-extrabold">
+          {title}
+        </span>
 
         <span
           className={`min-w-0 flex-1 truncate ${
             failed ? 'font-semibold text-tomato' : 'text-slate-500'
           }`}
         >
-          {failed ? 'Location not allowed' : area || (!pincode ? sub : '')}
+          {sub}
         </span>
 
         <ChevronDown className="size-4 shrink-0 text-slate-600" />
@@ -278,7 +279,9 @@ function LocationButton({ variant }) {
       aria-label={label}
       className="hidden min-w-0 shrink-0 border-l border-slate-200 pl-6 text-left leading-tight lg:block"
     >
-      <span className="block text-xl font-extrabold">{title}</span>
+      <span className="block text-xl font-extrabold">
+        {title}
+      </span>
 
       <span
         className={`mt-0.5 flex items-center gap-1 text-sm ${
@@ -292,7 +295,6 @@ function LocationButton({ variant }) {
   );
 }
 
-// Sticky nahi hai: sticky wrapper App ke andar hai (header + mobile search saath mein)
 function Header({ withSearch, searchProps }) {
   return (
     <header className="border-b border-slate-200 bg-white md:shadow-sm">
@@ -332,7 +334,6 @@ export default function App() {
       }
     : {};
 
-  // Sticky header ki height measure karke CSS variable mein daalo (StorePage use karta hai)
   const headerRef = useRef(null);
 
   useEffect(() => {
@@ -346,6 +347,7 @@ export default function App() {
       );
 
     set();
+
     const ro = new ResizeObserver(set);
     ro.observe(el);
 
@@ -360,7 +362,6 @@ export default function App() {
           searchProps={searchProps}
         />
 
-        {/* Mobile search bar: sirf home pe. Store page pe ye StorePage ke search icon se khulta hai */}
         {withSearch && !onStorePage && (
           <div className="border-b border-slate-100 bg-white px-4 py-2 md:hidden">
             <SearchBox {...searchProps} />
